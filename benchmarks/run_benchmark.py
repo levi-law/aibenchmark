@@ -5,15 +5,12 @@ Benchmark runner for custom AI backends using HF Open LLM Leaderboard tasks.
 
 import json
 import sys
+import os
 from datetime import datetime
 from pathlib import Path
 
 # Add benchmarks directory to path to import custom LM
 sys.path.insert(0, str(Path(__file__).parent))
-
-from lm_eval import evaluator
-from custom_lm import CustomLM
-
 
 def run_benchmarks(
     api_url: str,
@@ -36,31 +33,34 @@ def run_benchmarks(
     if tasks is None:
         tasks = ["hellaswag", "arc_easy", "truthfulqa_mc2"]
     
-    print("=" * 80)
-    print("AI Backend Benchmark")
-    print("=" * 80)
-    print(f"API URL: {api_url}")
-    print(f"Samples per task: {num_samples}")
-    print(f"Timeout: {timeout}s")
-    print(f"Tasks: {', '.join(tasks)}")
-    print()
+    print("=" * 80, file=sys.stderr)
+    print("AI Backend Benchmark", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(f"API URL: {api_url}", file=sys.stderr)
+    print(f"Samples per task: {num_samples}", file=sys.stderr)
+    print(f"Timeout: {timeout}s", file=sys.stderr)
+    print(f"Tasks: {', '.join(tasks)}", file=sys.stderr)
+    print(file=sys.stderr)
     
     # Initialize custom LM
-    print("Initializing custom LM adapter...")
+    print("Initializing custom LM adapter...", file=sys.stderr)
     try:
+        from custom_lm import CustomLM
         lm = CustomLM(api_url=api_url, timeout=timeout)
     except Exception as e:
         return {
             "success": False,
             "error": f"Failed to initialize LM adapter: {str(e)}"
         }
-    print()
+    print(file=sys.stderr)
     
     # Run evaluation
-    print("Starting evaluation...")
-    print("-" * 80)
+    print("Starting evaluation...", file=sys.stderr)
+    print("-" * 80, file=sys.stderr)
     
     try:
+        from lm_eval import evaluator
+        
         results = evaluator.simple_evaluate(
             model=lm,
             tasks=tasks,
@@ -69,22 +69,22 @@ def run_benchmarks(
             bootstrap_iters=0,  # Disable bootstrap for speed
         )
         
-        print("-" * 80)
-        print("\n✓ Evaluation completed successfully!\n")
+        print("-" * 80, file=sys.stderr)
+        print("\n✓ Evaluation completed successfully!\n", file=sys.stderr)
         
-        # Print summary
-        print("=" * 80)
-        print("BENCHMARK RESULTS SUMMARY")
-        print("=" * 80)
+        # Print summary to stderr
+        print("=" * 80, file=sys.stderr)
+        print("BENCHMARK RESULTS SUMMARY", file=sys.stderr)
+        print("=" * 80, file=sys.stderr)
         
         if "results" in results:
             for task_name, task_results in results["results"].items():
-                print(f"\n{task_name.upper()}:")
+                print(f"\n{task_name.upper()}:", file=sys.stderr)
                 for metric_name, metric_value in task_results.items():
                     if isinstance(metric_value, (int, float)):
-                        print(f"  {metric_name}: {metric_value:.4f}")
+                        print(f"  {metric_name}: {metric_value:.4f}", file=sys.stderr)
         
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 80, file=sys.stderr)
         
         return {
             "success": True,
@@ -92,9 +92,9 @@ def run_benchmarks(
         }
         
     except Exception as e:
-        print(f"\n✗ Evaluation failed: {e}")
+        print(f"\n✗ Evaluation failed: {e}", file=sys.stderr)
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
         return {
             "success": False,
             "error": str(e),
@@ -121,11 +121,12 @@ if __name__ == "__main__":
         tasks=args.tasks
     )
     
+    # Output JSON to stdout
+    print(json.dumps(result, indent=2))
+    
     if args.output:
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
-        print(f"\nResults saved to: {args.output}")
-    else:
-        print("\n" + json.dumps(result, indent=2))
+        print(f"\nResults also saved to: {args.output}", file=sys.stderr)
     
     sys.exit(0 if result.get("success") else 1)

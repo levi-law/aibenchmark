@@ -12,3 +12,15 @@
 - [x] View historical benchmark results
 - [x] Export benchmark results (JSON, Markdown)
 - [x] User authentication and authorization
+
+## Bug Fixes
+
+- [x] Fix URL validation to be more lenient and user-friendly
+
+## Production Readiness
+
+- [x] Fix Python benchmark execution environment issues
+- [x] Add database seeding with OpenAI premade configuration
+- [x] Test end-to-end benchmark execution
+- [x] Add proper error handling for benchmark failures
+- [x] Implement polling mechanism for result updates

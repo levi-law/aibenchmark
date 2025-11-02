@@ -33,7 +33,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(255),
-        apiUrl: z.string().url().max(512),
+        apiUrl: z.string().min(1).max(512),
         timeout: z.number().int().min(10).max(600).default(120),
         numSamples: z.number().int().min(1).max(1000).default(50),
         tasks: z.array(z.string()).min(1)
@@ -57,7 +57,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number(),
         name: z.string().min(1).max(255).optional(),
-        apiUrl: z.string().url().max(512).optional(),
+        apiUrl: z.string().min(1).max(512).optional(),
         timeout: z.number().int().min(10).max(600).optional(),
         numSamples: z.number().int().min(1).max(1000).optional(),
         tasks: z.array(z.string()).min(1).optional()
@@ -162,75 +162,85 @@ export const appRouter = router({
         await db.updateBenchmarkResult(result.id, { status: 'running' });
 
         // Execute benchmark asynchronously
-        const pythonProcess = spawn('python3.11', args);
+        const pythonProcess = spawn('python3.11', args, {
+          env: { ...process.env }
+        });
         
         let stdout = '';
         let stderr = '';
 
         pythonProcess.stdout.on('data', (data) => {
           stdout += data.toString();
-          console.log(`[Benchmark ${result.id}] ${data}`);
         });
 
         pythonProcess.stderr.on('data', (data) => {
           stderr += data.toString();
-          console.error(`[Benchmark ${result.id}] ${data}`);
+          console.log(`[Benchmark ${result.id}] ${data}`);
         });
 
         pythonProcess.on('close', async (code) => {
           try {
-            if (code === 0) {
-              // Parse the output to extract results
-              const outputLines = stdout.split('\n');
-              let jsonOutput = '';
-              let inJson = false;
-              
-              for (const line of outputLines) {
-                if (line.trim().startsWith('{')) {
-                  inJson = true;
-                }
-                if (inJson) {
-                  jsonOutput += line + '\n';
-                }
-              }
-
-              if (jsonOutput) {
-                const benchmarkData = JSON.parse(jsonOutput);
+            console.log(`[Benchmark ${result.id}] Process exited with code ${code}`);
+            console.log(`[Benchmark ${result.id}] STDOUT length: ${stdout.length}`);
+            
+            if (code === 0 && stdout.trim()) {
+              try {
+                // Parse JSON from stdout
+                const benchmarkData = JSON.parse(stdout.trim());
+                
                 if (benchmarkData.success && benchmarkData.results) {
                   await db.updateBenchmarkResult(result.id, {
                     status: 'completed',
                     results: JSON.stringify(benchmarkData.results),
                     completedAt: new Date()
                   });
+                  console.log(`[Benchmark ${result.id}] ✓ Completed successfully`);
                 } else {
                   await db.updateBenchmarkResult(result.id, {
                     status: 'failed',
                     errorMessage: benchmarkData.error || 'Unknown error',
                     completedAt: new Date()
                   });
+                  console.log(`[Benchmark ${result.id}] ✗ Failed: ${benchmarkData.error}`);
                 }
-              } else {
+              } catch (parseError) {
+                console.error(`[Benchmark ${result.id}] JSON parse error:`, parseError);
                 await db.updateBenchmarkResult(result.id, {
                   status: 'failed',
-                  errorMessage: 'No valid output from benchmark script',
+                  errorMessage: `Failed to parse results: ${parseError}\nOutput: ${stdout.substring(0, 500)}`,
                   completedAt: new Date()
                 });
               }
             } else {
+              const errorMsg = stderr || `Process exited with code ${code}`;
               await db.updateBenchmarkResult(result.id, {
                 status: 'failed',
-                errorMessage: `Benchmark process exited with code ${code}\n${stderr}`,
+                errorMessage: errorMsg.substring(0, 1000),
                 completedAt: new Date()
               });
+              console.log(`[Benchmark ${result.id}] ✗ Failed with code ${code}`);
             }
           } catch (error) {
             console.error(`[Benchmark ${result.id}] Error updating result:`, error);
-            await db.updateBenchmarkResult(result.id, {
-              status: 'failed',
-              errorMessage: `Error processing results: ${error}`,
-              completedAt: new Date()
-            });
+            try {
+              await db.updateBenchmarkResult(result.id, {
+                status: 'failed',
+                errorMessage: `Error processing results: ${error}`,
+                completedAt: new Date()
+              });
+            } catch (dbError) {
+              console.error(`[Benchmark ${result.id}] Failed to update DB:`, dbError);
+            }
           }
+        });
+
+        pythonProcess.on('error', async (error) => {
+          console.error(`[Benchmark ${result.id}] Process error:`, error);
+          await db.updateBenchmarkResult(result.id, {
+            status: 'failed',
+            errorMessage: `Failed to start benchmark process: ${error.message}`,
+            completedAt: new Date()
+          });
         });
 
         return { 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,20 @@ export default function Dashboard() {
   const utils = trpc.useUtils();
   const { data: configs, isLoading: configsLoading } = trpc.benchmarkConfig.list.useQuery();
   const { data: results, isLoading: resultsLoading } = trpc.benchmarkResult.list.useQuery();
+
+  // Poll for result updates every 5 seconds if there are running benchmarks
+  useEffect(() => {
+    if (!results) return;
+    
+    const hasRunning = results.some(r => r.status === 'running' || r.status === 'pending');
+    if (!hasRunning) return;
+
+    const interval = setInterval(() => {
+      utils.benchmarkResult.list.invalidate();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [results, utils]);
 
   const createConfig = trpc.benchmarkConfig.create.useMutation({
     onSuccess: () => {
@@ -179,7 +193,7 @@ export default function Dashboard() {
                       <Label htmlFor="apiUrl">API Endpoint URL</Label>
                       <Input
                         id="apiUrl"
-                        type="url"
+                        type="text"
                         placeholder="https://api.example.com"
                         value={formData.apiUrl}
                         onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })}
@@ -348,7 +362,7 @@ export default function Dashboard() {
                 </div>
               ) : results && results.length > 0 ? (
                 <div className="space-y-3">
-                  {results.slice(0, 5).map((result) => (
+                  {results.slice(0, 10).map((result) => (
                     <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -363,6 +377,11 @@ export default function Dashboard() {
                         <p className="text-sm text-muted-foreground mt-1">
                           {new Date(result.createdAt).toLocaleString()}
                         </p>
+                        {result.errorMessage && (
+                          <p className="text-xs text-destructive mt-1 line-clamp-2">
+                            {result.errorMessage}
+                          </p>
+                        )}
                       </div>
                       {result.status === 'completed' && (
                         <Button
